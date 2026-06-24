@@ -1,0 +1,21 @@
+app = "cryptopricebot"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DB_PATH = "/app/data/bot.db"
+
+[mounts]
+  source = "bot_data"
+  destination = "/app/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256"
+  cpus = 1
+
+# long-polling needs a constantly running machine; do not auto-stop
+[http_service]
+  auto_stop_machines = false

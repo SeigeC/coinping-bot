@@ -1,0 +1,7 @@
+.env
+data/
+*.db
+cryptopricebot
+bot
+*.exe
+.DS_Store
