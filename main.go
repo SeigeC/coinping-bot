@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -62,6 +63,20 @@ func main() {
 
 	go runAlertChecker(engine, stopCh)
 	go runDailyDigest(engine, stopCh)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	go func() {
+		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"status":"ok"}`)
+		})
+		log.Printf("health server listening on :%s", port)
+		if err := http.ListenAndServe(":"+port, nil); err != nil {
+			log.Printf("health server: %v", err)
+		}
+	}()
 
 	log.Println("bot started")
 	b.Start()
