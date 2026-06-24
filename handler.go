@@ -28,15 +28,23 @@ func resolveCoinID(input string) string {
 }
 
 func HandleStart(c telebot.Context) error {
-	return c.Send(`👋 Welcome to Crypto Price Alert Bot!
+	return c.Send(`👋 Welcome to CoinPing!
 
-Commands:
-/price <coin>  — get current USD price (e.g. /price btc)
-/top           — top 10 coins by market cap
-/alert         — alert commands
-/alerts        — list your active alerts
-/digest on|off — toggle daily digest
-/help          — show this help`)
+Stop refreshing charts. Set alerts, get pinged when they hit.
+
+🚀 Quick start:
+/price BTC  — live price
+/top  — top 10 by market cap
+/alert price BTC 65000 up  — breakout alert
+/alert change BTC 5  — volatility alert (24h move >5%)
+/alert spread BTC 0.5  — exchange spread alert
+
+📋 Manage:
+/alerts  — your active alerts
+/delalert <id>  — delete an alert
+/digest on  — daily market summary
+
+Free tier: 3 active alerts. Happy trading! 📈`)
 }
 
 func HandleHelp(c telebot.Context) error {
