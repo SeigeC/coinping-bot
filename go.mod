@@ -3,6 +3,7 @@ module cryptopricebot
 go 1.26
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	gopkg.in/telebot.v3 v3.3.8
 	modernc.org/sqlite v1.34.5
 )

@@ -4,17 +4,43 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"gopkg.in/telebot.v3"
 )
 
-type AlertEngine struct {
-	cg  *CoinGeckoClient
-	bot *telebot.Bot
+const priceFreshnessWindow = 5 * time.Second
+const multiExchangeCheckInterval = 10 * time.Minute
+
+type PriceFeed struct {
+	binance *BinanceFeed
+	cg      *CoinGeckoClient
 }
 
-func NewAlertEngine(bot *telebot.Bot, cg *CoinGeckoClient) *AlertEngine {
-	return &AlertEngine{cg: cg, bot: bot}
+func NewPriceFeed(binance *BinanceFeed, cg *CoinGeckoClient) *PriceFeed {
+	return &PriceFeed{binance: binance, cg: cg}
+}
+
+func (pf *PriceFeed) CurrentPrice(coinID string) (float64, string) {
+	if pf.binance != nil {
+		if p, ok := pf.binance.GetPriceFresh(coinID, priceFreshnessWindow); ok {
+			return p, "binance_ws"
+		}
+	}
+	p, err := pf.cg.GetSimplePrice(coinID)
+	if err != nil {
+		return 0, ""
+	}
+	return p, "coingecko"
+}
+
+type AlertEngine struct {
+	feed *PriceFeed
+	bot  *telebot.Bot
+}
+
+func NewAlertEngine(bot *telebot.Bot, feed *PriceFeed) *AlertEngine {
+	return &AlertEngine{feed: feed, bot: bot}
 }
 
 const freeAlertLimit = 3
@@ -48,9 +74,9 @@ func (e *AlertEngine) checkOne(a Alert) error {
 }
 
 func (e *AlertEngine) checkPrice(a Alert, coinID, displaySym string) error {
-	price, err := e.cg.GetSimplePrice(coinID)
-	if err != nil {
-		return err
+	price, source := e.feed.CurrentPrice(coinID)
+	if price == 0 {
+		return fmt.Errorf("no price available from any source")
 	}
 	threshold := a.Threshold
 	if threshold == 0 {
@@ -58,21 +84,21 @@ func (e *AlertEngine) checkPrice(a Alert, coinID, displaySym string) error {
 	}
 	if (a.Direction == "up" || a.Direction == "either") && price >= threshold {
 		return e.trigger(a, fmt.Sprintf(
-			"🔔 %s 上穿 $%s！当前价格 $%s",
-			displaySym, formatMoney(threshold), formatMoney(price),
+			"🔔 %s 上穿 $%s！当前价格 $%s (via %s)",
+			displaySym, formatMoney(threshold), formatMoney(price), source,
 		))
 	}
 	if (a.Direction == "down" || a.Direction == "either") && price <= threshold {
 		return e.trigger(a, fmt.Sprintf(
-			"🔔 %s 下穿 $%s！当前价格 $%s",
-			displaySym, formatMoney(threshold), formatMoney(price),
+			"🔔 %s 下穿 $%s！当前价格 $%s (via %s)",
+			displaySym, formatMoney(threshold), formatMoney(price), source,
 		))
 	}
 	return nil
 }
 
 func (e *AlertEngine) checkChange(a Alert, coinID, displaySym string) error {
-	change, err := e.cg.Get24hChange(coinID)
+	change, err := e.feed.cg.Get24hChange(coinID)
 	if err != nil {
 		return err
 	}
@@ -98,7 +124,7 @@ func (e *AlertEngine) checkChange(a Alert, coinID, displaySym string) error {
 }
 
 func (e *AlertEngine) checkSpread(a Alert, coinID, displaySym string) error {
-	prices, err := e.cg.GetPriceMultiExchange(a.Coin)
+	prices, err := e.feed.cg.GetPriceMultiExchange(a.Coin)
 	if err != nil {
 		return err
 	}
@@ -123,6 +149,98 @@ func (e *AlertEngine) checkSpread(a Alert, coinID, displaySym string) error {
 	return nil
 }
 
+func (e *AlertEngine) CheckMultiExchangeSpreads() {
+	alerts, err := GetActiveAlerts()
+	if err != nil {
+		log.Printf("multi-exchange: load alerts: %v", err)
+		return
+	}
+
+	checked := map[string]bool{}
+	for _, a := range alerts {
+		coinID := resolveCoinID(a.Coin)
+		if checked[coinID] {
+			continue
+		}
+		checked[coinID] = true
+
+		prices, err := e.feed.cg.GetExchangeTickers(coinID)
+		if err != nil {
+			log.Printf("multi-exchange: %s: %v", coinID, err)
+			continue
+		}
+		if len(prices) < 2 {
+			continue
+		}
+
+		var min, max float64
+		first := true
+		for _, p := range prices {
+			if first {
+				min, max = p, p
+				first = false
+				continue
+			}
+			if p < min {
+				min = p
+			}
+			if p > max {
+				max = p
+			}
+		}
+		if min == 0 {
+			continue
+		}
+		spreadPct := (max - min) / min * 100
+
+		spreadAlerts := filterSpreadAlerts(alerts, coinID)
+		for _, sa := range spreadAlerts {
+			if spreadPct >= sa.Threshold {
+				e.triggerSpreadAlert(sa, spreadPct, prices)
+			}
+		}
+	}
+}
+
+func filterSpreadAlerts(alerts []Alert, coinID string) []Alert {
+	var out []Alert
+	coinLower := strings.ToLower(coinID)
+	for _, a := range alerts {
+		if a.AlertType == "spread" && strings.ToLower(resolveCoinID(a.Coin)) == coinLower && a.Active {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func (e *AlertEngine) triggerSpreadAlert(a Alert, spreadPct float64, prices map[string]float64) {
+	var exchanges []string
+	for ex := range prices {
+		exchanges = append(exchanges, ex)
+	}
+	msg := fmt.Sprintf(
+		"🔔 %s 多所价差 %.2f%% 超过 %.2f%% 阈值\n交易所价格: %s",
+		strings.ToUpper(a.Coin), spreadPct, a.Threshold,
+		formatExchangePrices(prices),
+	)
+	if err := DeactivateAlert(a.ID); err != nil {
+		log.Printf("multi-exchange: deactivate alert %d: %v", a.ID, err)
+		return
+	}
+	recipient := &telebot.User{ID: a.UserID}
+	if _, err := e.bot.Send(recipient, msg); err != nil {
+		log.Printf("multi-exchange: send to user %d: %v", a.UserID, err)
+	}
+}
+
+func formatExchangePrices(prices map[string]float64) string {
+	var parts []string
+	for ex, p := range prices {
+		parts = append(parts, fmt.Sprintf("%s: $%s", strings.ToUpper(ex), formatMoney(p)))
+	}
+	return strings.Join(parts, ", ")
+}
+
 func (e *AlertEngine) trigger(a Alert, msg string) error {
 	if err := DeactivateAlert(a.ID); err != nil {
 		return fmt.Errorf("deactivate: %w", err)
@@ -136,7 +254,7 @@ func (e *AlertEngine) trigger(a Alert, msg string) error {
 }
 
 func (e *AlertEngine) SendDailyDigest(userID int64) {
-	coins, err := e.cg.GetTopCoins(10)
+	coins, err := e.feed.cg.GetTopCoins(10)
 	if err != nil {
 		log.Printf("digest user %d: fetch top: %v", userID, err)
 		return

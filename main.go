@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +23,9 @@ func main() {
 	defer CloseDB()
 
 	cg := NewCoinGeckoClient(cfg.CoinGeckoBaseURL)
+
+	binanceFeed := NewBinanceFeed()
+	priceFeed := NewPriceFeed(binanceFeed, cg)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -42,7 +46,7 @@ func main() {
 		log.Fatalf("create bot: %v", err)
 	}
 
-	engine := NewAlertEngine(b, cg)
+	engine := NewAlertEngine(b, priceFeed)
 
 	b.Handle("/start", HandleStart)
 	b.Handle("/help", HandleHelp)
@@ -67,6 +71,12 @@ func main() {
 
 	go runAlertChecker(engine, stopCh)
 	go runDailyDigest(engine, stopCh)
+	go runBinanceCoinRefresh(binanceFeed, stopCh)
+	go runMultiExchangeSpreadCheck(engine, stopCh)
+
+	// Start Binance WS with initial coins from active alerts
+	initialCoins := activeAlertCoins()
+	binanceFeed.Start(initialCoins)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -122,5 +132,52 @@ func sendDigestsDue(engine *AlertEngine) {
 	}
 	for _, userID := range subscribers {
 		engine.SendDailyDigest(userID)
+	}
+}
+
+func activeAlertCoins() []string {
+	alerts, err := GetActiveAlerts()
+	if err != nil {
+		log.Printf("binance: load active alerts: %v", err)
+		return nil
+	}
+	seen := map[string]bool{}
+	var coins []string
+	for _, a := range alerts {
+		coin := strings.ToLower(a.Coin)
+		if !seen[coin] {
+			seen[coin] = true
+			coins = append(coins, coin)
+		}
+	}
+	return coins
+}
+
+func runBinanceCoinRefresh(bf *BinanceFeed, stopCh <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			coins := activeAlertCoins()
+			if len(coins) > 0 {
+				bf.Start(coins)
+			}
+		}
+	}
+}
+
+func runMultiExchangeSpreadCheck(engine *AlertEngine, stopCh <-chan struct{}) {
+	ticker := time.NewTicker(multiExchangeCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			engine.CheckMultiExchangeSpreads()
+		}
 	}
 }

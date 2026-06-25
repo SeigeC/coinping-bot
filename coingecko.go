@@ -143,3 +143,31 @@ func (c *CoinGeckoClient) get(url string) ([]byte, error) {
 	}
 	return io.ReadAll(resp.Body)
 }
+
+func (c *CoinGeckoClient) GetExchangeTickers(coinID string) (map[string]float64, error) {
+	url := fmt.Sprintf("%s/coins/%s/tickers?exchange_ids=binance,gdax,kraken", c.baseURL, coinID)
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Tickers []struct {
+			Market struct {
+				Name string `json:"name"`
+			} `json:"market"`
+			Last float64 `json:"last"`
+		} `json:"tickers"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parse tickers response: %w", err)
+	}
+
+	prices := make(map[string]float64)
+	for _, t := range resp.Tickers {
+		if t.Last > 0 {
+			prices[strings.ToLower(t.Market.Name)] = t.Last
+		}
+	}
+	return prices, nil
+}
