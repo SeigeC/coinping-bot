@@ -52,6 +52,7 @@ func main() {
 	b.Handle("/alerts", HandleAlerts)
 	b.Handle("/delalert", HandleDelAlert)
 	b.Handle("/digest", HandleDigest)
+	b.Handle("/history", HandleHistory)
 	b.Handle("/upgrade", HandleUpgrade)
 	b.Handle(telebot.OnCheckout, HandleCheckout)
 	b.Handle(telebot.OnPayment, HandlePayment)

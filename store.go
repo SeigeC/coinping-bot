@@ -266,6 +266,41 @@ func SetDigest(userID int64, on bool) error {
 	return err
 }
 
+func GetTriggeredAlerts(userID int64, limit int) ([]Alert, error) {
+	rows, err := db.Query(
+		"SELECT "+alertColumns+" FROM alerts WHERE user_id = ? AND triggered_at IS NOT NULL ORDER BY triggered_at DESC LIMIT ?",
+		userID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var alerts []Alert
+	for rows.Next() {
+		a, err := scanAlert(rows)
+		if err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, a)
+	}
+	return alerts, rows.Err()
+}
+
+func SetDigestTime(userID int64, digestTime string) error {
+	if _, err := db.Exec(
+		"INSERT OR IGNORE INTO settings (user_id) VALUES (?)",
+		userID,
+	); err != nil {
+		return err
+	}
+	_, err := db.Exec(
+		"UPDATE settings SET digest_time = ? WHERE user_id = ?",
+		digestTime, userID,
+	)
+	return err
+}
+
 func GetDigestSubscribers(digestTime string) ([]int64, error) {
 	rows, err := db.Query(
 		"SELECT user_id FROM settings WHERE daily_digest = TRUE AND digest_time = ?",

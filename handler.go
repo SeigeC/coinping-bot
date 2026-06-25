@@ -42,7 +42,9 @@ Stop refreshing charts. Set alerts, get pinged when they hit.
 📋 Manage:
 /alerts  — your active alerts
 /delalert <id>  — delete an alert
+/history  — recently triggered alerts
 /digest on  — daily market summary
+/digest time HH:00  — set digest time (whole hour)
 
 Free tier: 3 active alerts. /upgrade for unlimited alerts. Happy trading! 📈`)
 }
@@ -58,7 +60,8 @@ func HandleHelp(c telebot.Context) error {
     /alert spread <coin> <percent>         — cross-exchange spread alert
 /alerts — list your active alerts
 /delalert <id> — delete an alert
-/digest on|off — toggle daily digest
+/digest on|off|time <HH:00> — daily digest settings
+/history — recently triggered alerts
 /help — this message`)
 }
 
@@ -321,7 +324,7 @@ func HandleDigest(c telebot.Context) error {
 		if s.DailyDigest {
 			state = "on"
 		}
-		return c.Send(fmt.Sprintf("Daily digest is %s (at %s %s).\nToggle with /digest on or /digest off", state, s.DigestTime, s.Timezone))
+		return c.Send(fmt.Sprintf("Daily digest is %s (at %s %s).\nToggle with /digest on or /digest off\nSet time with /digest time HH:00 (whole hour)", state, s.DigestTime, s.Timezone))
 	}
 	switch strings.ToLower(args[0]) {
 	case "on":
@@ -334,7 +337,70 @@ func HandleDigest(c telebot.Context) error {
 			return c.Send(fmt.Sprintf("Failed: %v", err))
 		}
 		return c.Send("✅ Daily digest disabled.")
+	case "time":
+		return handleDigestTime(c, userID, args[1:])
 	default:
-		return c.Send("Usage: /digest on|off")
+		return c.Send("Usage: /digest on|off|time <HH:00>")
 	}
+}
+
+func handleDigestTime(c telebot.Context, userID int64, args []string) error {
+	if len(args) == 0 {
+		return c.Send("Usage: /digest time <HH:00>\nExample: /digest time 09:00")
+	}
+	raw := strings.TrimSpace(args[0])
+	parts := strings.SplitN(raw, ":", 2)
+	if len(parts) != 2 || parts[1] != "00" {
+		return c.Send("Time must be on the hour, e.g. 09:00 or 22:00")
+	}
+	hour, err := strconv.Atoi(parts[0])
+	if err != nil || hour < 0 || hour > 23 {
+		return c.Send("Hour must be 00–23. Example: /digest time 09:00")
+	}
+	formatted := fmt.Sprintf("%02d:00", hour)
+	if err := SetDigestTime(userID, formatted); err != nil {
+		return c.Send(fmt.Sprintf("Failed: %v", err))
+	}
+	return c.Send(fmt.Sprintf("✅ Daily digest time set to %s UTC.", formatted))
+}
+
+func HandleHistory(c telebot.Context) error {
+	userID := c.Sender().ID
+	if err := EnsureUser(userID, c.Sender().Username); err != nil {
+		return c.Send(fmt.Sprintf("Failed to register user: %v", err))
+	}
+	const historyLimit = 20
+	alerts, err := GetTriggeredAlerts(userID, historyLimit)
+	if err != nil {
+		return c.Send(fmt.Sprintf("Failed to load history: %v", err))
+	}
+	if len(alerts) == 0 {
+		return c.Send("No triggered alerts yet.\nSet an alert with /alert and wait for it to fire.")
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📜 Last %d triggered alerts:\n\n", len(alerts)))
+	for _, a := range alerts {
+		sb.WriteString(formatHistoryLine(a))
+		sb.WriteString("\n")
+	}
+	return c.Send(sb.String())
+}
+
+func formatHistoryLine(a Alert) string {
+	if !a.TriggeredAt.Valid {
+		return fmt.Sprintf("#%d  %s (no trigger time)", a.ID, strings.ToUpper(a.Coin))
+	}
+	t := a.TriggeredAt.String
+	if len(t) > 16 {
+		t = t[:16]
+	}
+	switch a.AlertType {
+	case "price":
+		return fmt.Sprintf("#%d  %s %s $%s  ·  fired %s", a.ID, strings.ToUpper(a.Coin), a.Direction, formatMoney(a.Threshold), t)
+	case "change":
+		return fmt.Sprintf("#%d  %s 24h change ≥ %.2f%%  ·  fired %s", a.ID, strings.ToUpper(a.Coin), a.Threshold, t)
+	case "spread":
+		return fmt.Sprintf("#%d  %s spread ≥ %.2f%%  ·  fired %s", a.ID, strings.ToUpper(a.Coin), a.Threshold, t)
+	}
+	return fmt.Sprintf("#%d  %s  ·  fired %s", a.ID, strings.ToUpper(a.Coin), t)
 }
