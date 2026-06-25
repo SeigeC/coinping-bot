@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoinPing — Multi-Condition Crypto Alerts</title>
+<meta name="description" content="Stop refreshing charts. Set price threshold, 24h % change, and cross-exchange spread alerts. Get pinged on Telegram when your conditions hit.">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #e6edf3; line-height: 1.6; }
+  .container { max-width: 720px; margin: 0 auto; padding: 80px 24px; }
+  h1 { font-size: 2.5rem; font-weight: 700; margin-bottom: 12px; background: linear-gradient(135deg, #58a6ff, #bc8cff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { font-size: 1.25rem; color: #8b949e; margin-bottom: 40px; }
+  .cta { display: inline-block; background: #238636; color: #fff; padding: 14px 32px; border-radius: 8px; font-size: 1.1rem; font-weight: 600; text-decoration: none; margin-bottom: 48px; transition: background .2s; }
+  .cta:hover { background: #2ea043; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin-bottom: 48px; }
+  .feature { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; }
+  .feature h3 { font-size: 1.1rem; margin-bottom: 8px; color: #58a6ff; }
+  .feature p { color: #8b949e; font-size: 0.95rem; }
+  .commands { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 32px; margin-bottom: 48px; }
+  .commands h2 { font-size: 1.3rem; margin-bottom: 16px; }
+  .cmd { display: flex; gap: 12px; margin-bottom: 10px; font-size: 0.95rem; }
+  .cmd-code { background: #0d1117; color: #58a6ff; padding: 2px 8px; border-radius: 4px; font-family: 'SF Mono', monospace; min-width: 220px; }
+  .cmd-desc { color: #8b949e; }
+  .pricing { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 32px; margin-bottom: 48px; }
+  .pricing h2 { font-size: 1.3rem; margin-bottom: 8px; }
+  .pricing p { color: #8b949e; margin-bottom: 16px; }
+  .plans { display: flex; gap: 12px; flex-wrap: wrap; }
+  .plan { flex: 1; min-width: 120px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px; text-align: center; }
+  .plan .price { font-size: 1.3rem; font-weight: 700; }
+  .plan .label { font-size: 0.85rem; color: #8b949e; }
+  .plan.featured { border-color: #58a6ff; }
+  .footer { text-align: center; color: #484f58; font-size: 0.85rem; }
+  .footer a { color: #8b949e; }
+  @media (max-width: 480px) {
+    .container { padding: 40px 16px; }
+    h1 { font-size: 1.8rem; }
+    .cmd { flex-direction: column; gap: 4px; }
+    .cmd-code { min-width: unset; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>CoinPing</h1>
+  <p class="subtitle">Multi-condition crypto price alerts on Telegram. Stop refreshing charts — set your conditions, get pinged when they hit.</p>
+
+  <a class="cta" href="https://t.me/CoinPingAlertBot">Try on Telegram →</a>
+
+  <div class="features">
+    <div class="feature">
+      <h3>Price Thresholds</h3>
+      <p>Get notified the moment a coin crosses your target price, up or down. Set it once and walk away.</p>
+    </div>
+    <div class="feature">
+      <h3>Volatility Alerts</h3>
+      <p>Catch the moves that matter. Get pinged when 24h change exceeds your threshold, without watching a chart all day.</p>
+    </div>
+    <div class="feature">
+      <h3>Spread Alerts</h3>
+      <p>Watch for cross-exchange divergence. Spot wicks, lag, and liquidity events as they happen.</p>
+    </div>
+  </div>
+
+  <div class="commands">
+    <h2>Commands</h2>
+    <div class="cmd"><span class="cmd-code">/price BTC</span><span class="cmd-desc">Live spot price</span></div>
+    <div class="cmd"><span class="cmd-code">/top</span><span class="cmd-desc">Top 10 by market cap (with 24h change)</span></div>
+    <div class="cmd"><span class="cmd-code">/alert price BTC 65000 up</span><span class="cmd-desc">Price threshold alert</span></div>
+    <div class="cmd"><span class="cmd-code">/alert change BTC 5</span><span class="cmd-desc">24h % change alert (±5%)</span></div>
+    <div class="cmd"><span class="cmd-code">/alert spread BTC 0.5</span><span class="cmd-desc">Cross-exchange spread alert (±0.5%)</span></div>
+    <div class="cmd"><span class="cmd-code">/alerts</span><span class="cmd-desc">List your active alerts</span></div>
+    <div class="cmd"><span class="cmd-code">/delalert 3</span><span class="cmd-desc">Delete alert #3</span></div>
+    <div class="cmd"><span class="cmd-code">/digest on</span><span class="cmd-desc">Daily market summary</span></div>
+  </div>
+
+  <div class="pricing">
+    <h2>Pricing</h2>
+    <p>Free tier includes 3 active alerts. Unlimited tier coming soon.</p>
+    <div class="plans">
+      <div class="plan featured"><div class="price">Free</div><div class="label">3 alerts</div></div>
+      <div class="plan"><div class="price">Soon</div><div class="label">Unlimited alerts</div></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Built by <a href="https://github.com/SeigeC">@SeigeC</a> · <a href="https://github.com/SeigeC/coinping-bot">Source</a> · <a href="https://t.me/CoinPingAlertBot">@CoinPingAlertBot</a></p>
+  </div>
+</div>
+</body>
+</html>
