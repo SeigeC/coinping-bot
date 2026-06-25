@@ -44,7 +44,7 @@ Stop refreshing charts. Set alerts, get pinged when they hit.
 /delalert <id>  — delete an alert
 /digest on  — daily market summary
 
-Free tier: 3 active alerts. Happy trading! 📈`)
+Free tier: 3 active alerts. /upgrade for unlimited alerts. Happy trading! 📈`)
 }
 
 func HandleHelp(c telebot.Context) error {
@@ -262,6 +262,48 @@ func HandleDelAlert(c telebot.Context) error {
 		return c.Send(err.Error())
 	}
 	return c.Send(fmt.Sprintf("✅ Alert #%d deleted.", id))
+}
+
+func HandleUpgrade(c telebot.Context) error {
+	userID := c.Sender().ID
+	if err := EnsureUser(userID, c.Sender().Username); err != nil {
+		return c.Send(fmt.Sprintf("Failed: %v", err))
+	}
+	premium, err := IsUserPremium(userID)
+	if err != nil {
+		return c.Send(fmt.Sprintf("Failed: %v", err))
+	}
+	if premium {
+		return c.Send("You already have premium — unlimited alerts. 🎉")
+	}
+	invoice := &telebot.Invoice{
+		Title:       "CoinPing Premium",
+		Description: "Unlimited alerts — no cap, no limits. One-time purchase, permanent upgrade.",
+		Payload:     "premium_upgrade",
+		Currency:    "XTR",
+		Token:       "",
+		Prices: []telebot.Price{
+			{Label: "Premium Upgrade", Amount: 100},
+		},
+	}
+	return c.Send(invoice)
+}
+
+func HandleCheckout(c telebot.Context) error {
+	return c.Accept()
+}
+
+func HandlePayment(c telebot.Context) error {
+	payment := c.Message().Payment
+	userID := c.Sender().ID
+
+	if payment.Payload == "premium_upgrade" {
+		if err := SetUserPremium(userID, true); err != nil {
+			return c.Send(fmt.Sprintf("Payment succeeded but upgrade failed — contact support. (%v)", err))
+		}
+		return c.Send("✅ Payment received! You now have **CoinPing Premium** — unlimited alerts, no limits. Enjoy!")
+	}
+	return c.Send("✅ Payment received! Thank you for your support.")
 }
 
 func HandleDigest(c telebot.Context) error {

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://seigec.github.io/coinping-bot/sitemap.xml

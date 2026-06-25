@@ -223,6 +223,11 @@ func DeleteAlert(userID, alertID int64) error {
 	return nil
 }
 
+func SetUserPremium(userID int64, premium bool) error {
+	_, err := db.Exec("UPDATE users SET is_premium = ? WHERE id = ?", premium, userID)
+	return err
+}
+
 func DeactivateAlert(alertID int64) error {
 	_, err := db.Exec(
 		"UPDATE alerts SET active = FALSE, triggered_at = CURRENT_TIMESTAMP WHERE id = ?",
