@@ -1,4 +1,4 @@
-module cryptopricebot
+module github.com/SeigeC/coinping-bot
 
 go 1.26
 
