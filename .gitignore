@@ -2,6 +2,7 @@
 data/
 *.db
 cryptopricebot
+coinping-bot
 bot
 *.exe
 .DS_Store

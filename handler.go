@@ -37,7 +37,6 @@ Stop refreshing charts. Set alerts, get pinged when they hit.
 /top  — top 10 by market cap
 /alert price BTC 65000 up  — breakout alert
 /alert change BTC 5  — volatility alert (24h move >5%)
-/alert spread BTC 0.5  — exchange spread alert
 
 📋 Manage:
 /alerts  — your active alerts
@@ -46,7 +45,10 @@ Stop refreshing charts. Set alerts, get pinged when they hit.
 /digest on  — daily market summary
 /digest time HH:00  — set digest time (whole hour)
 
-Free tier: 3 active alerts. /upgrade for unlimited alerts. Happy trading! 📈`)
+💎 /pro  — unlock real-time Binance data + spread alerts
+
+Free tier: 3 active alerts, CoinGecko data (~30s delay).
+Happy trading! 📈`)
 }
 
 func HandleHelp(c telebot.Context) error {
@@ -57,11 +59,12 @@ func HandleHelp(c telebot.Context) error {
 /alert — alert subcommands:
     /alert price <coin> <price> [up|down]  — price threshold alert
     /alert change <coin> <percent>         — 24h change alert
-    /alert spread <coin> <percent>         — cross-exchange spread alert
+    /alert spread <coin> <percent>         — cross-exchange spread alert (Pro only)
 /alerts — list your active alerts
 /delalert <id> — delete an alert
 /digest on|off|time <HH:00> — daily digest settings
 /history — recently triggered alerts
+/pro — Pro features & upgrade
 /help — this message`)
 }
 
@@ -109,14 +112,13 @@ func HandleAlert(c telebot.Context, engine *AlertEngine) error {
 
 	args := c.Args()
 	if len(args) == 0 {
-		return c.Send(`🔔 Alert commands:
-
-/alert price <coin> <price> [up|down]  — price threshold (e.g. /alert price BTC 65000 up)
-/alert change <coin> <percent>         — 24h change alert (e.g. /alert change BTC 5)
-/alert spread <coin> <percent>         — cross-exchange spread (e.g. /alert spread BTC 0.5)
-
-/alerts — list your alerts
-/delalert <id> — delete an alert`)
+		msg := "🔔 Alert commands:\n\n"
+		msg += "/alert price <coin> <price> [up|down]  — price threshold (e.g. /alert price BTC 65000 up)\n"
+		msg += "/alert change <coin> <percent>         — 24h change alert (e.g. /alert change BTC 5)\n"
+		msg += "/alert spread <coin> <percent>         — cross-exchange spread (Pro only)\n\n"
+		msg += "/alerts — list your alerts\n"
+		msg += "/delalert <id> — delete an alert"
+		return c.Send(msg)
 	}
 
 	sub := strings.ToLower(args[0])
@@ -178,6 +180,13 @@ func handleAlertChange(c telebot.Context, userID int64, args []string) error {
 }
 
 func handleAlertSpread(c telebot.Context, userID int64, args []string) error {
+	premium, err := IsUserPremium(userID)
+	if err != nil {
+		return c.Send(fmt.Sprintf("Failed to check status: %v", err))
+	}
+	if !premium {
+		return c.Send("🔒 Cross-exchange spread alerts are a Pro feature.\nUse /pro to upgrade (100 Stars/month or 10 Stars one-time query).")
+	}
 	if len(args) < 2 {
 		return c.Send("Usage: /alert spread <coin> <percent>\nExample: /alert spread BTC 0.5")
 	}
@@ -209,7 +218,7 @@ func checkAlertLimit(userID int64) error {
 		return fmt.Errorf("check alert count: %w", err)
 	}
 	if count >= freeAlertLimit {
-		return fmt.Errorf("❌ Free tier limit reached (%d active alerts). Upgrade to premium for unlimited alerts.", freeAlertLimit)
+		return fmt.Errorf("❌ Free tier limit reached (%d active alerts).\nUse /pro to upgrade for unlimited alerts.", freeAlertLimit)
 	}
 	return nil
 }
@@ -267,6 +276,32 @@ func HandleDelAlert(c telebot.Context) error {
 	return c.Send(fmt.Sprintf("✅ Alert #%d deleted.", id))
 }
 
+func HandlePro(c telebot.Context) error {
+	userID := c.Sender().ID
+	if err := EnsureUser(userID, c.Sender().Username); err != nil {
+		return c.Send(fmt.Sprintf("Failed: %v", err))
+	}
+	premium, err := IsUserPremium(userID)
+	if err != nil {
+		return c.Send(fmt.Sprintf("Failed: %v", err))
+	}
+
+	if premium {
+		return c.Send("💎 You already have **CoinPing Pro** — enjoy unlimited alerts, Binance real-time prices, and cross-exchange spread alerts!\n\nCommands: /alert spread <coin> <%> to create spread alerts.")
+	}
+
+	return c.Send("💎 **CoinPing Pro**\n\n" +
+		"Unlock premium features:\n" +
+		"• Unlimited alerts (free: 3)\n" +
+		"• Binance WebSocket real-time prices (<2s delay)\n" +
+		"• Cross-exchange spread alerts (BTC/ETH/SOL on Binance, Coinbase, Kraken)\n\n" +
+		"💰 **Monthly** — 100 Stars/month\n" +
+		"    Use /upgrade to subscribe\n\n" +
+		"🔎 **One-time query** — 10 Stars\n" +
+		"    Use /upgrade once for a single advanced query\n\n" +
+		"Telegram Stars: buy in-app (Apple Pay/Google Pay), developer gets 100%.")
+}
+
 func HandleUpgrade(c telebot.Context) error {
 	userID := c.Sender().ID
 	if err := EnsureUser(userID, c.Sender().Username); err != nil {
@@ -279,17 +314,39 @@ func HandleUpgrade(c telebot.Context) error {
 	if premium {
 		return c.Send("You already have premium — unlimited alerts. 🎉")
 	}
-	invoice := &telebot.Invoice{
-		Title:       "CoinPing Premium",
-		Description: "Unlimited alerts — no cap, no limits. One-time purchase, permanent upgrade.",
-		Payload:     "premium_upgrade",
-		Currency:    "XTR",
-		Token:       "",
-		Prices: []telebot.Price{
-			{Label: "Premium Upgrade", Amount: 100},
-		},
+
+	args := c.Args()
+	mode := "monthly"
+	if len(args) > 0 {
+		mode = strings.ToLower(args[0])
 	}
-	return c.Send(invoice)
+
+	switch mode {
+	case "once":
+		invoice := &telebot.Invoice{
+			Title:       "CoinPing One-Time Query",
+			Description: "Single advanced query — check current cross-exchange spreads for one coin.",
+			Payload:     "pro_once",
+			Currency:    "XTR",
+			Token:       "",
+			Prices: []telebot.Price{
+				{Label: "One-Time Query", Amount: 10},
+			},
+		}
+		return c.Send(invoice)
+	default:
+		invoice := &telebot.Invoice{
+			Title:       "CoinPing Pro Monthly",
+			Description: "Unlimited alerts, Binance real-time prices, cross-exchange spread monitoring. Renews monthly.",
+			Payload:     "pro_monthly",
+			Currency:    "XTR",
+			Token:       "",
+			Prices: []telebot.Price{
+				{Label: "CoinPing Pro", Amount: 100},
+			},
+		}
+		return c.Send(invoice)
+	}
 }
 
 func HandleCheckout(c telebot.Context) error {
@@ -300,13 +357,28 @@ func HandlePayment(c telebot.Context) error {
 	payment := c.Message().Payment
 	userID := c.Sender().ID
 
-	if payment.Payload == "premium_upgrade" {
+	switch payment.Payload {
+	case "pro_monthly":
 		if err := SetUserPremium(userID, true); err != nil {
 			return c.Send(fmt.Sprintf("Payment succeeded but upgrade failed — contact support. (%v)", err))
 		}
+		return c.Send("✅ Welcome to **CoinPing Pro**! You now have:\n• Unlimited alerts\n• Binance real-time prices\n• Cross-exchange spread alerts\n\nValid for 1 month. Try /alert spread BTC 0.5 to get started!")
+
+	case "pro_once":
+		if err := SetUserPremiumDuration(userID, 1); err != nil {
+			return c.Send(fmt.Sprintf("Payment succeeded but upgrade failed — contact support. (%v)", err))
+		}
+		return c.Send("✅ One-time Pro access activated for 24 hours!\nTry /alert spread BTC 0.5 or /alert spread ETH 0.3 now.")
+
+	case "premium_upgrade":
+		if err := SetUserPremiumOnce(userID); err != nil {
+			return c.Send(fmt.Sprintf("Payment succeeded but upgrade failed — contact support. (%v)", err))
+		}
 		return c.Send("✅ Payment received! You now have **CoinPing Premium** — unlimited alerts, no limits. Enjoy!")
+
+	default:
+		return c.Send("✅ Payment received! Thank you for your support.")
 	}
-	return c.Send("✅ Payment received! Thank you for your support.")
 }
 
 func HandleDigest(c telebot.Context) error {

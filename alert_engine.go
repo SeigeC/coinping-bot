@@ -34,6 +34,18 @@ func (pf *PriceFeed) CurrentPrice(coinID string) (float64, string) {
 	return p, "coingecko"
 }
 
+func (pf *PriceFeed) CurrentPriceForUser(coinID string, userID int64) (float64, string) {
+	premium, err := IsUserPremium(userID)
+	if err != nil || !premium {
+		p, err := pf.cg.GetSimplePrice(coinID)
+		if err != nil {
+			return 0, ""
+		}
+		return p, "coingecko"
+	}
+	return pf.CurrentPrice(coinID)
+}
+
 type AlertEngine struct {
 	feed *PriceFeed
 	bot  *telebot.Bot
@@ -74,7 +86,7 @@ func (e *AlertEngine) checkOne(a Alert) error {
 }
 
 func (e *AlertEngine) checkPrice(a Alert, coinID, displaySym string) error {
-	price, source := e.feed.CurrentPrice(coinID)
+	price, source := e.feed.CurrentPriceForUser(coinID, a.UserID)
 	if price == 0 {
 		return fmt.Errorf("no price available from any source")
 	}

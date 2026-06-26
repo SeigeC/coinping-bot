@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -70,6 +71,10 @@ CREATE TABLE IF NOT EXISTS settings (
 		d.Close()
 		return nil, err
 	}
+	if err := migrateUsers(d); err != nil {
+		d.Close()
+		return nil, err
+	}
 	db = d
 	return d, nil
 }
@@ -115,6 +120,38 @@ func migrateAlerts(d *sql.DB) error {
 	return nil
 }
 
+func init() {
+	// migration runner stitched after InitDB returns
+}
+
+func migrateUsers(d *sql.DB) error {
+	rows, err := d.Query("PRAGMA table_info(users)")
+	if err != nil {
+		return err
+	}
+	existing := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	rows.Close()
+
+	if !existing["premium_expires_at"] {
+		if _, err := d.Exec("ALTER TABLE users ADD COLUMN premium_expires_at DATETIME"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func CloseDB() {
 	if db != nil {
 		db.Close()
@@ -131,11 +168,25 @@ func EnsureUser(userID int64, username string) error {
 
 func IsUserPremium(userID int64) (bool, error) {
 	var isPremium bool
-	err := db.QueryRow("SELECT is_premium FROM users WHERE id = ?", userID).Scan(&isPremium)
+	var expiresAt sql.NullString
+	err := db.QueryRow("SELECT is_premium, premium_expires_at FROM users WHERE id = ?", userID).Scan(&isPremium, &expiresAt)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
-	return isPremium, err
+	if err != nil {
+		return false, err
+	}
+	if !isPremium {
+		return false, nil
+	}
+	if expiresAt.Valid && expiresAt.String != "" {
+		t, err := time.Parse("2006-01-02 15:04:05", expiresAt.String)
+		if err == nil && time.Now().UTC().After(t) {
+			db.Exec("UPDATE users SET is_premium = FALSE, premium_expires_at = NULL WHERE id = ?", userID)
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func GetUserAlertCount(userID int64) (int, error) {
@@ -224,7 +275,24 @@ func DeleteAlert(userID, alertID int64) error {
 }
 
 func SetUserPremium(userID int64, premium bool) error {
-	_, err := db.Exec("UPDATE users SET is_premium = ? WHERE id = ?", premium, userID)
+	if premium {
+		expiresAt := time.Now().UTC().AddDate(0, 1, 0).Format("2006-01-02 15:04:05")
+		_, err := db.Exec("UPDATE users SET is_premium = ?, premium_expires_at = ? WHERE id = ?", premium, expiresAt, userID)
+		return err
+	}
+	_, err := db.Exec("UPDATE users SET is_premium = ?, premium_expires_at = NULL WHERE id = ?", premium, userID)
+	return err
+}
+
+func SetUserPremiumOnce(userID int64) error {
+	expiresAt := "9999-12-31 23:59:59"
+	_, err := db.Exec("UPDATE users SET is_premium = TRUE, premium_expires_at = ? WHERE id = ?", expiresAt, userID)
+	return err
+}
+
+func SetUserPremiumDuration(userID int64, durationDays int) error {
+	expiresAt := time.Now().UTC().AddDate(0, 0, durationDays).Format("2006-01-02 15:04:05")
+	_, err := db.Exec("UPDATE users SET is_premium = TRUE, premium_expires_at = ? WHERE id = ?", expiresAt, userID)
 	return err
 }
 
